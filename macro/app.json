@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Macro Tracker",
+    "slug": "macro-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "macrotracker",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#3B82F6"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.yourname.macrotracker",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Macro Tracker uses your microphone to let you log meals by speaking naturally.",
+        "NSSpeechRecognitionUsageDescription": "Macro Tracker uses speech recognition to transcribe your spoken meal entries."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#3B82F6"
+      },
+      "package": "com.yourname.macrotracker",
+      "permissions": ["RECORD_AUDIO"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Macro Tracker to access your microphone for voice food logging."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
