@@ -4,14 +4,8 @@
     "slug": "macro-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
     "scheme": "macrotracker",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/images/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#3B82F6"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.yourname.macrotracker",
@@ -21,17 +15,12 @@
       }
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#3B82F6"
-      },
       "package": "com.yourname.macrotracker",
       "permissions": ["RECORD_AUDIO"]
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "output": "static"
     },
     "plugins": [
       "expo-router",

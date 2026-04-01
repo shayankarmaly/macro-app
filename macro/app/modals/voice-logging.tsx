@@ -6,14 +6,19 @@ import {
   StyleSheet,
   Animated,
   Easing,
-  Platform,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { Audio } from "expo-av";
 import { Colors } from "@/constants/colors";
-import { VoiceState } from "@/types";
+import { MealType, VoiceState } from "@/types";
 import { useDiaryStore } from "@/stores/diaryStore";
-import { MOCK_FOODS } from "@/data/mockData";
+import {
+  parseVoiceTranscript,
+  searchFoods,
+  transcribeVoiceAudio,
+} from "@/lib/api/foods";
 
 // ─── Ripple animation ────────────────────────────────────────────────────────
 
@@ -77,71 +82,185 @@ function RippleCircle({
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function VoiceLoggingScreen() {
-  const [voiceState, setVoiceState] = useState<VoiceState>("listening");
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [transcript, setTranscript] = useState<string>(
-    "Grilled salmon with roasted vegetables"
+    'Tap the mic to start (say: "2 servings grilled salmon")'
   );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [suggestedMeal, setSuggestedMeal] = useState<{
+    food: any;
+    quantity: number;
+    mealType: MealType;
+  } | null>(null);
   const { setPendingMeal } = useDiaryStore();
 
-  // Simulate voice processing after 3 seconds (demo mode)
+  const openAiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+
   useEffect(() => {
-    if (voiceState === "listening") {
-      const timer = setTimeout(() => {
-        setVoiceState("processing");
-        setTimeout(() => {
-          setVoiceState("done");
-          setTranscript("Grilled salmon with roasted vegetables and quinoa");
-        }, 1200);
-      }, 3000);
-      return () => clearTimeout(timer);
+    return () => {
+      // Ensure recording is cleaned up if user closes the modal mid-recording.
+      if (recording) {
+        recording.stopAndUnloadAsync().catch(() => undefined);
+      }
+    };
+  }, [recording]);
+
+  const deriveMealType = (): MealType => {
+    const hour = new Date().getHours();
+    if (hour < 11) return "breakfast";
+    if (hour < 16) return "lunch";
+    if (hour < 21) return "dinner";
+    return "snacks";
+  };
+
+  const startListening = async () => {
+    setErrorMessage(null);
+    setSuggestedMeal(null);
+
+    const permission = await Audio.requestPermissionsAsync();
+    if (!permission.granted) {
+      setVoiceState("error");
+      setErrorMessage("Microphone permission is required for voice logging.");
+      return;
     }
-  }, [voiceState]);
+
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const newRecording = new Audio.Recording();
+      await newRecording.prepareToRecordAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      await newRecording.startAsync();
+
+      setRecording(newRecording);
+      setVoiceState("listening");
+      setTranscript("Listening...");
+    } catch {
+      setVoiceState("error");
+      setErrorMessage("Could not start recording.");
+    }
+  };
+
+  const stopAndProcessRecording = async () => {
+    if (!recording) return;
+
+    setVoiceState("processing");
+
+    try {
+      await recording.stopAndUnloadAsync();
+      const audioUri = recording.getURI();
+      setRecording(null);
+
+      if (!audioUri) {
+        throw new Error("No audio captured.");
+      }
+
+      if (!openAiKey) {
+        throw new Error("Missing OpenAI API key in .env.");
+      }
+
+      const spokenText = await transcribeVoiceAudio(audioUri, openAiKey);
+      if (!spokenText) {
+        throw new Error("Could not transcribe audio.");
+      }
+      setTranscript(spokenText);
+
+      const parsed = await parseVoiceTranscript(spokenText, openAiKey);
+      const quantity =
+        parsed && Number.isFinite(parsed.quantity) && parsed.quantity > 0
+          ? parsed.quantity
+          : 1;
+      const query = parsed?.name || spokenText;
+
+      let foods = await searchFoods(query);
+      if (!foods.length && query !== spokenText) {
+        foods = await searchFoods(spokenText);
+      }
+      if (!foods.length) {
+        throw new Error("No matching foods found.");
+      }
+
+      setSuggestedMeal({
+        food: foods[0],
+        quantity,
+        mealType: deriveMealType(),
+      });
+      setVoiceState("done");
+    } catch (err: any) {
+      setVoiceState("error");
+      setErrorMessage(err?.message ?? "Voice logging failed.");
+    }
+  };
 
   const handleCancel = () => {
+    if (recording) {
+      recording.stopAndUnloadAsync().catch(() => undefined);
+    }
     router.back();
   };
 
   const handleDone = () => {
-    if (voiceState !== "done") return;
-
-    // Map transcript to a food (in real app, call parseVoiceTranscript + searchFoods)
-    const matchedFood = MOCK_FOODS.find((f) =>
-      f.name.toLowerCase().includes("salmon")
-    ) ?? MOCK_FOODS[0];
+    if (voiceState !== "done" || !suggestedMeal) return;
 
     setPendingMeal({
-      food: matchedFood,
+      food: suggestedMeal.food,
       method: "voice",
-      mealType: "dinner",
-      quantity: 1,
+      mealType: suggestedMeal.mealType,
+      quantity: suggestedMeal.quantity,
     });
 
     router.push({
       pathname: "/modals/confirm-meal",
       params: {
         payload: JSON.stringify({
-          food: matchedFood,
+          food: suggestedMeal.food,
           method: "voice",
-          mealType: "dinner",
-          quantity: 1,
+          mealType: suggestedMeal.mealType,
+          quantity: suggestedMeal.quantity,
         }),
       },
     });
   };
 
+  const handleMicPress = async () => {
+    if (voiceState === "processing") return;
+    if (voiceState === "done") {
+      handleDone();
+      return;
+    }
+    if (voiceState === "listening") {
+      await stopAndProcessRecording();
+      return;
+    }
+    await startListening();
+  };
+
   const stateLabel =
-    voiceState === "listening"
-      ? "Listening..."
+    voiceState === "idle"
+      ? "Ready"
+      : voiceState === "listening"
+      ? "Listening... Tap again to stop"
       : voiceState === "processing"
       ? "Processing..."
-      : "Done! Tap to confirm";
+      : voiceState === "done"
+      ? "Done! Tap to confirm"
+      : "Voice logging error";
 
   const stateSubtitle =
-    voiceState === "listening"
+    voiceState === "idle"
+      ? "Speak naturally after tapping the mic"
+      : voiceState === "listening"
       ? "Speak naturally"
       : voiceState === "processing"
-      ? "Matching food..."
-      : "Review your meal below";
+      ? "Transcribing and matching food..."
+      : voiceState === "done"
+      ? "Review your meal below"
+      : errorMessage ?? "Try again";
 
   return (
     <View style={styles.screen}>
@@ -167,7 +286,7 @@ export default function VoiceLoggingScreen() {
 
           {/* Mic button */}
           <TouchableOpacity
-            onPress={voiceState === "done" ? handleDone : undefined}
+            onPress={handleMicPress}
             style={[
               styles.micBtn,
               voiceState === "done" && styles.micBtnDone,
@@ -186,6 +305,10 @@ export default function VoiceLoggingScreen() {
         <View style={styles.transcriptCard}>
           <Text style={styles.transcriptText}>{transcript}</Text>
         </View>
+
+        {errorMessage ? (
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        ) : null}
 
         {/* Example hint */}
         <Text style={styles.exampleText}>
@@ -288,6 +411,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
     lineHeight: 26,
+  },
+  errorText: {
+    color: "#fff",
+    fontSize: 13,
+    textAlign: "center",
+    marginBottom: 8,
   },
   exampleText: {
     fontSize: 12,

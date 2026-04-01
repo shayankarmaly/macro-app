@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,12 +15,20 @@ import { Colors } from "@/constants/colors";
 import { MacroProgressCard } from "@/components/diary/MacroProgressCard";
 import { MealSection } from "@/components/diary/MealSection";
 import { useDiaryStore } from "@/stores/diaryStore";
+import { useAuthStore } from "@/stores/authStore";
 import { MealEntry, MealType, ConfirmMealPayload } from "@/types";
 
 const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snacks"];
 
 export default function DiaryScreen() {
-  const { totals, goals, entries, currentDate } = useDiaryStore();
+  const { totals, goals, entries, currentDate, loadDiary } = useDiaryStore();
+  const session = useAuthStore((state) => state.session);
+  const userId = session?.user?.id as string | undefined;
+
+  useEffect(() => {
+    if (!userId) return;
+    loadDiary(userId, currentDate);
+  }, [currentDate, loadDiary, userId]);
 
   // Format the date label (e.g. "Saturday, Mar 28")
   const dateLabel = new Date(currentDate + "T12:00:00").toLocaleDateString(

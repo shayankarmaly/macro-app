@@ -14,6 +14,25 @@ interface AuthState {
   loadSession: () => Promise<void>;
 }
 
+async function fetchUserProfile(userId: string): Promise<UserProfile | null> {
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("id", userId)
+    .single();
+
+  if (error || !data) return null;
+
+  return {
+    id: data.id,
+    email: data.email,
+    name: data.name ?? "",
+    avatarUrl: data.avatar_url ?? undefined,
+    goals: { calories: 2000, protein: 114, carbs: 183, fat: 71 },
+    createdAt: data.created_at,
+  };
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
@@ -23,11 +42,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { data } = await supabase.auth.getSession();
       if (data.session) {
-        const { data: profile } = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", data.session.user.id)
-          .single();
+        const profile = await fetchUserProfile(data.session.user.id);
 
         set({
           session: data.session,
@@ -48,7 +63,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       password,
     });
     if (error) throw error;
-    set({ session: data.session });
+
+    const profile = data.session?.user?.id
+      ? await fetchUserProfile(data.session.user.id)
+      : null;
+
+    set({ session: data.session, user: profile });
   },
 
   signUpWithEmail: async (email, password, name) => {
@@ -63,7 +83,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         goals: { calories: 2000, protein: 114, carbs: 183, fat: 71 },
       });
     }
-    set({ session: data.session });
+
+    const profile = data.user?.id ? await fetchUserProfile(data.user.id) : null;
+    set({ session: data.session, user: profile });
   },
 
   signOut: async () => {

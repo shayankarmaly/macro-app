@@ -56,7 +56,19 @@ export async function searchFoods(query: string): Promise<Food[]> {
     )}&search_simple=1&action=process&json=1&page_size=20&fields=product_name,brands,serving_size,nutriments,code`;
 
     const res = await fetch(url);
-    const json = await res.json();
+    if (!res.ok) {
+      console.error("Food search HTTP error:", res.status);
+      return [];
+    }
+
+    const raw = await res.text();
+    let json: any;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      console.error("Food search parse error: non-JSON response");
+      return [];
+    }
 
     return (json.products ?? [])
       .filter((p: any) => p.product_name && p.nutriments)
@@ -74,7 +86,15 @@ export async function lookupBarcode(barcode: string): Promise<Food | null> {
   try {
     const url = `${OFF_BASE}/api/v0/product/${barcode}.json`;
     const res = await fetch(url);
-    const json = await res.json();
+    if (!res.ok) return null;
+
+    const raw = await res.text();
+    let json: any;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      return null;
+    }
 
     if (json.status !== 1 || !json.product) return null;
     return offProductToFood(barcode, json.product);
@@ -121,9 +141,53 @@ export async function parseVoiceTranscript(
     const content = json.choices?.[0]?.message?.content;
     if (!content) return null;
 
-    return JSON.parse(content);
+    const cleaned = String(content)
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
+
+    return JSON.parse(cleaned);
   } catch (err) {
     console.error("Voice parse error:", err);
+    return null;
+  }
+}
+
+// ─── Whisper transcription (audio -> text) ───────────────────────────────────
+
+export async function transcribeVoiceAudio(
+  audioUri: string,
+  openAiKey: string
+): Promise<string | null> {
+  try {
+    const form = new FormData();
+    form.append("model", "whisper-1");
+    form.append("response_format", "json");
+    form.append("file", {
+      // React Native FormData file shape
+      uri: audioUri,
+      name: "voice.m4a",
+      type: "audio/m4a",
+    } as any);
+
+    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openAiKey}`,
+      },
+      body: form,
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error("Whisper transcription error:", errorText);
+      return null;
+    }
+
+    const json = await res.json();
+    return json?.text?.trim() || null;
+  } catch (err) {
+    console.error("Whisper request failed:", err);
     return null;
   }
 }

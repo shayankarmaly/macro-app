@@ -9,7 +9,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useDiaryStore } from "@/stores/diaryStore";
-import { MOCK_GOALS } from "@/data/mockData";
+import { useAuthStore } from "@/stores/authStore";
 
 interface GoalRowProps {
   label: string;
@@ -32,6 +32,15 @@ function GoalRow({ label, value, unit, color }: GoalRowProps) {
 
 export default function ProfileScreen() {
   const { goals } = useDiaryStore();
+  const { user, signOut } = useAuthStore();
+
+  const userInitial = user?.name?.trim()?.charAt(0)?.toUpperCase() ?? "👤";
+  const userName = user?.name?.trim() || "Macro Tracker User";
+  const userEmail = user?.email || "";
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -47,10 +56,10 @@ export default function ProfileScreen() {
         {/* Avatar */}
         <View style={styles.avatarSection}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarEmoji}>👤</Text>
+            <Text style={styles.avatarEmoji}>{userInitial}</Text>
           </View>
-          <Text style={styles.userName}>Shayan</Text>
-          <Text style={styles.userEmail}>shayan.karmaly@gmail.com</Text>
+          <Text style={styles.userName}>{userName}</Text>
+          <Text style={styles.userEmail}>{userEmail}</Text>
         </View>
 
         {/* Goals card */}
@@ -104,7 +113,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Sign out */}
-        <TouchableOpacity style={styles.signOutBtn}>
+        <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
 

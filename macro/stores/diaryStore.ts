@@ -4,13 +4,8 @@ import {
   Macros,
   MealType,
   ConfirmMealPayload,
-  Food,
 } from "@/types";
-import {
-  MOCK_TODAY_ENTRIES,
-  MOCK_TOTALS,
-  MOCK_GOALS,
-} from "@/data/mockData";
+import { getDiaryEntries, getUserGoals, logMealEntry } from "@/lib/api/meals";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -66,9 +61,9 @@ function todayString(): string {
 
 export const useDiaryStore = create<DiaryState>((set, get) => ({
   currentDate: todayString(),
-  entries: MOCK_TODAY_ENTRIES, // Start with mock data
-  totals: MOCK_TOTALS,
-  goals: MOCK_GOALS,
+  entries: [],
+  totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+  goals: { calories: 2000, protein: 114, carbs: 183, fat: 71 },
   isLoading: false,
   error: null,
   pendingMeal: null,
@@ -80,11 +75,12 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   loadDiary: async (userId, date) => {
     set({ isLoading: true, error: null });
     try {
-      // TODO: replace with real Supabase call
-      // const entries = await getDiaryEntries(userId, date);
-      const entries = MOCK_TODAY_ENTRIES;
+      const [entries, goals] = await Promise.all([
+        getDiaryEntries(userId, date),
+        getUserGoals(userId),
+      ]);
       const totals = computeTotals(entries);
-      set({ entries, totals, isLoading: false });
+      set({ entries, totals, goals, isLoading: false });
     } catch (err: any) {
       set({ error: err.message, isLoading: false });
     }
@@ -112,9 +108,8 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     const { pendingMeal } = get();
     if (!pendingMeal) return;
 
-    // Optimistic update
     const newEntry: MealEntry = {
-      id: Date.now().toString(),
+      id: "",
       userId,
       food: pendingMeal.food,
       foodId: pendingMeal.food.id,
@@ -130,11 +125,20 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       },
     };
 
-    get().addEntry(newEntry);
-    set({ pendingMeal: null });
+    try {
+      const persisted = await logMealEntry({
+        userId,
+        foodId: newEntry.foodId,
+        mealType: newEntry.mealType,
+        quantity: newEntry.quantity,
+        method: newEntry.method,
+      });
 
-    // TODO: persist to Supabase
-    // await logMealEntry({ userId, foodId: newEntry.foodId, ... })
+      get().addEntry({ ...newEntry, id: persisted.id });
+      set({ pendingMeal: null, error: null });
+    } catch (err: any) {
+      set({ error: err.message ?? "Failed to save meal entry." });
+    }
   },
 
   recomputeTotals: () => {
